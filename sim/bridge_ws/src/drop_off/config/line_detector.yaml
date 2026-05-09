@@ -1,0 +1,162 @@
+# Default parameters for drop_off.line_detector.
+#
+# Tune HSV thresholds for the actual yellow tape and lighting in the
+# warehouse. Run the detector alone, watch /drop_off/image_overlay in
+# rqt_image_view, and adjust until the green/red overlays track the
+# tape cleanly while ignoring reflections and yellow non-tape items.
+/**:
+  ros__parameters:
+    # Camera selection. The detector subscribes to BOTH topics; only
+    # the camera named here gets its frames processed and published.
+    # Default `front_low` matches the bench-tested approach geometry
+    # (forward-facing camera, pallet doesn't obscure it). Switch live
+    # without restart if needed:
+    #   ros2 param set /line_detector active_camera fork_low
+    active_camera: front_low
+    fork_low_topic: /fork_low/rgb/raw
+    front_low_topic: /front_low/rgb/raw
+
+    line_state_topic: /drop_off/line_state
+    overlay_topic: /drop_off/image_overlay
+    overlay_enabled: true
+
+    # Per-camera rotation. fork_low is mounted upside-down on the truck;
+    # front_low is upright. Applied right after decode so "bottom of
+    # image == nearest the robot, image up == further away" holds for
+    # both cameras.
+    rotate_180_fork_low: true
+    rotate_180_front_low: false
+
+    # ROI: vertical fractions of image height (0=top, 1=bottom).
+    # The default is full-frame; narrow it once the camera mount is
+    # locked so we ignore far-field clutter.
+    roi_top_frac: 0.0
+    roi_bottom_frac: 1.0
+
+    # Horizontal detection band (fractions of full image width). Pixels
+    # outside this band are zeroed in the yellow mask before connected
+    # components, so wall paint, far-field clutter, and floor markings
+    # near the edges of the frame can't become guide / stop candidates.
+    # Default: middle 2/3 of image width (1/6 trimmed from each side).
+    # Wider bands keep the guide visible during aggressive yaw
+    # corrections; tighter bands reject more edge clutter. Set to
+    # 0.0 / 1.0 to disable. Drawn as faint magenta vertical lines on
+    # the overlay.
+    detect_left_frac: 0.1667
+    detect_right_frac: 0.8333
+
+    # Yellow-tape HSV mask. OpenCV hue is 0-180. Keep this band tight
+    # to avoid tan / wood / cardboard false positives -- if real tape
+    # is being missed because of glare or shade, prefer turning on
+    # `recover_specular` or narrowing the spatial search regions
+    # rather than dropping S/V here.
+    # Red tape. OpenCV hue=0..180 wraps -- the detector takes the
+    # [hue_low..180] | [0..hue_high] branch when hue_low > hue_high.
+    # Measured on /front_low/rgb/raw: tape pixels cluster at hue=0
+    # (~430 px) and 174-178 (~608 px); no tape pixels at hue 1-173.
+    # sat_min: tape sat p1=96. val_min: tape val p1=90. Keep upper
+    # bound tight so the warm orange floor doesn't out-compete the
+    # actual guide.
+    hue_low: 170
+    hue_high: 10
+    sat_min: 80
+    val_min: 80
+
+    # Yellow stop tape (back_out trigger). Detected in parallel with
+    # the red guide/stop. Only horizontal blobs in this mask get
+    # classified, populating LineState.yellow_stop_detected /
+    # yellow_stop_distance_px. OpenCV hue=0..180; yellow sits ~20-30.
+    # Tighten/loosen sat/val once you measure the actual tape.
+    yellow_hue_low: 18
+    yellow_hue_high: 35
+    yellow_sat_min: 80
+    yellow_val_min: 80
+
+    # Specular highlight recovery: bright + low-sat pixels touching
+    # confirmed yellow get reattached. Off by default because it tends
+    # to over-recover in busy bench scenes; turn on if reflective tape
+    # is being broken by white spots.
+    recover_specular: false
+    spec_val_min: 200
+    spec_sat_max: 60
+    spec_attach_px: 8
+
+    # Morphology / blob filtering.
+    # kernel_px is the OPEN (erode-then-dilate) kernel; with the 6-px-wide
+    # tape on /front_low, kernel_px=5 erodes the line below survival.
+    # kernel_px=3 keeps the guide intact (measured: post-morph blob area
+    # 463 vs 232 with kernel_px=5).
+    kernel_px: 3
+    close_kernel_px: 5
+    min_blob_area_px: 300
+
+    # Classification tolerances and minimum line aspect.
+    guide_yaw_tolerance_deg: 35.0
+    stop_yaw_tolerance_deg: 25.0
+    min_line_aspect: 2.5
+
+    # Per-line spatial gating in full-image fractions (post-rotation).
+    # A blob's centroid must sit at or below these y-fractions to be
+    # eligible for that role. Default: guide is searched in the lower
+    # 2/3 of the frame, stop only in the lower 1/2. Drawn as faint
+    # green / red horizontal lines on the overlay.
+    guide_search_top_frac: 0.3333
+    stop_search_top_frac: 0.5
+
+    # Stop-recovery from the guide blob. A short perpendicular stop
+    # tape (e.g. 1/5 image-width) that visually crosses the guide tape
+    # gets merged with the guide into a single connected component
+    # whose principal axis is the long vertical guide -- so the cross
+    # arm gets classified as part of the guide and is silently
+    # consumed. With this enabled, after the first pass we mask out a
+    # strip of width `guide_spine_min_width_px` (or 2.5x the guide's
+    # measured perpendicular spread, whichever is bigger) along the
+    # guide's principal axis and re-run connected components on the
+    # residual; any horizontal-ish blob there gets a fresh shot at
+    # being the stop. Bump `guide_spine_min_width_px` if the cross arm
+    # is still being eaten, lower it if too much of the stop near the
+    # intersection is being removed.
+    recover_stop_from_guide: true
+    guide_spine_min_width_px: 12
+
+    # Per-camera desired guide column (pixel), where the guide should
+    # appear when the truck is properly aligned. -1 = image-centre at
+    # runtime. fork_low has an x-offset from the truck centerline so
+    # set this to the measured pixel column when the camera is
+    # calibrated. front_low is on the centerline, so -1 is correct.
+    desired_guide_pixel_col_fork_low: -1
+    desired_guide_pixel_col_front_low: -1
+
+    # Per-camera sign convention for offset_px and yaw_rad in the
+    # published LineState. The controller expects a convention where:
+    #   * positive guide_yaw_rad  -> reverse + steer +1.0 reduces |yaw|.
+    #   * positive guide_offset_px -> reverse + steer -k*offset shifts
+    #     the rear toward the line (i.e. follow_line's
+    #     `delta = drive_dir * k_lat * offset_norm` converges).
+    # Verified empirically:
+    #   - fork_low (rear-facing): default +1.0 / +1.0 work as-is.
+    #     Re-verify if the camera mount changes.
+    #   - front_low (forward-facing): both signs needed to flip from
+    #     -1.0 to +1.0 -- yaw during test 2 (truck rotated wrong way),
+    #     offset during test 3 (truck physically left of line published
+    #     -85 px offset, which would steer rear left = further off).
+    offset_sign_fork_low: 1.0
+    yaw_sign_fork_low: 1.0
+    offset_sign_front_low: 1.0
+    yaw_sign_front_low: 1.0
+
+    # EMA smoothing on guide_offset_px / guide_yaw_rad (single-pole IIR).
+    # alpha=1.0 disables smoothing. 0.4 averages roughly the last 2-3
+    # frames at ~20 fps so a single bad detection is heavily attenuated
+    # while real corrections still come through. Filter resets if the
+    # guide is missing for more than ema_reset_gap_sec, so re-acquired
+    # detections don't get blended with stale state.
+    ema_alpha: 0.4
+    ema_reset_gap_sec: 0.3
+
+    # 3x3 row-major homography (pixel -> ground-plane metres). Leave
+    # all-zeros to skip the projection (LineState.guide_offset_m = NaN).
+    homography_pixel_to_ground:
+      [0.0, 0.0, 0.0,
+       0.0, 0.0, 0.0,
+       0.0, 0.0, 0.0]

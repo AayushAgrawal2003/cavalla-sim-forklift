@@ -38,7 +38,15 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 from std_msgs.msg import Float32
 from sensor_msgs.msg import JointState
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Quaternion
 from forklift_msgs.msg import ForkliftDirectCommand, ForkliftDriveFeedback
+
+try:
+    from drop_off_msgs.msg import LineState
+    HAVE_LINE_STATE = True
+except ImportError:
+    HAVE_LINE_STATE = False
 
 
 # Velocity scaling for axes commanded as normalized "speed" but driven as
@@ -49,6 +57,15 @@ STEER_MAX_RAD = 1.22      # mapping for steering_angle=±1.0
 
 DRIVE_RPM_MAX = 4000      # for ForkliftDriveFeedback.motor_speed_rpm clamp
 WHEEL_RADIUS_M = 0.1525   # front drive wheel radius (matches XML)
+
+# Front-low camera mount (in chassis body frame): looks along body +X (forks).
+CAM_FWD_OFFSET_M = 0.55   # meters ahead of chassis origin
+IMAGE_WIDTH_PX = 640
+IMAGE_HEIGHT_PX = 480
+PIXELS_PER_METER = 320.0  # camera scale: 1m lateral offset → ~half image width
+
+# Line geometry (in world frame). Default: straight along world +X at y=0.
+LINE_Y = 0.0
 
 
 class MujocoDriverNode(Node):
@@ -70,6 +87,17 @@ class MujocoDriverNode(Node):
 
         self._mj_lock = threading.Lock()
         self._step_count = 0
+
+        # Optional initial pose offset (env-driven so demos can place the
+        # forklift away from the line at startup). qpos layout for the root
+        # freejoint: [x, y, z, qw, qx, qy, qz].
+        init_y = float(os.environ.get('SIM_INIT_Y', '0.0'))
+        init_yaw = float(os.environ.get('SIM_INIT_YAW_RAD', '0.0'))
+        if init_y or init_yaw:
+            self.data.qpos[1] = init_y
+            self.data.qpos[3] = math.cos(init_yaw / 2.0)   # qw
+            self.data.qpos[6] = math.sin(init_yaw / 2.0)   # qz
+            mujoco.mj_forward(self.model, self.data)
 
         # -------- Command state --------
         self._cmd_drive = 0.0
@@ -101,8 +129,17 @@ class MujocoDriverNode(Node):
         self.pub_drive_fb = self.create_publisher(ForkliftDriveFeedback, '/forklift/drive_feedback', 1)
         self.pub_fork_h = self.create_publisher(Float32, '/forklift/fork_height', 1)
         self.pub_js = self.create_publisher(JointState, '/joint_states', 10)
+        self.pub_odom = self.create_publisher(Odometry, '/odom', 10)
+
+        if HAVE_LINE_STATE:
+            self.pub_line = self.create_publisher(LineState, '/drop_off/line_state', 10)
+        else:
+            self.pub_line = None
 
         self.create_timer(0.02, self._feedback_50hz)
+        # Line-state at ~25 Hz (the real detector runs at ~20 fps).
+        if self.pub_line is not None:
+            self.create_timer(0.04, self._line_state_25hz)
 
         self.get_logger().info(
             f"mujoco_driver ready; model='{model_path}'  "
@@ -200,12 +237,83 @@ class MujocoDriverNode(Node):
         self.pub_drive_fb.publish(fb)
 
         # Joint states (consumed by sim2 tricycle_odometry & robot_state_publisher)
+        stamp = self.get_clock().now().to_msg()
         js = JointState()
-        js.header.stamp = self.get_clock().now().to_msg()
+        js.header.stamp = stamp
         js.name = ['drive_fl', 'drive_fr', 'roll_rear', 'steering', 'lift', 'tilt']
         js.position = [drv_l_p, drv_r_p, rear_p, steer_q, lift_q, tilt_q]
         js.velocity = [drv_l_v, drv_r_v, rear_v, 0.0, 0.0, 0.0]
         self.pub_js.publish(js)
+
+        # Odometry (consumed by line_follower x_correct travel check)
+        with self._mj_lock:
+            cx, cy, cz = (float(x) for x in self.data.body('chassis').xpos)
+            cw, cqx, cqy, cqz = (float(x) for x in self.data.body('chassis').xquat)
+            v_world = self.data.cvel[self.model.body('chassis').id]  # [angvel(3), linvel(3)]
+            vx, vy = float(v_world[3]), float(v_world[4])
+            wz = float(v_world[2])
+        odom = Odometry()
+        odom.header.stamp = stamp
+        odom.header.frame_id = 'odom'
+        odom.child_frame_id = 'base_footprint'
+        odom.pose.pose.position.x = cx
+        odom.pose.pose.position.y = cy
+        odom.pose.pose.position.z = 0.0
+        odom.pose.pose.orientation = Quaternion(x=cqx, y=cqy, z=cqz, w=cw)
+        odom.twist.twist.linear.x = vx
+        odom.twist.twist.linear.y = vy
+        odom.twist.twist.angular.z = wz
+        self.pub_odom.publish(odom)
+
+    # ---------- Sim-derived line state ----------
+    def _line_state_25hz(self) -> None:
+        """Compute the LineState message the real line_detector would emit,
+        directly from MuJoCo ground truth (no rendering / image processing).
+
+        Sim line: straight along world +X at y=LINE_Y. Camera mounted
+        CAM_FWD_OFFSET_M ahead of the chassis on the body +X axis, looking
+        along body +X. Maps the world-frame offset and heading-error to the
+        signed pixel offset / yaw-rad the controller expects.
+        """
+        with self._mj_lock:
+            cx = float(self.data.body('chassis').xpos[0])
+            cy = float(self.data.body('chassis').xpos[1])
+            qw = float(self.data.body('chassis').xquat[0])
+            qz = float(self.data.body('chassis').xquat[3])
+
+        yaw = math.atan2(2.0 * qw * qz, 1.0 - 2.0 * qz * qz)
+        cam_x = cx + CAM_FWD_OFFSET_M * math.cos(yaw)
+        cam_y = cy + CAM_FWD_OFFSET_M * math.sin(yaw)
+
+        # Lateral offset of the line (perpendicular distance projected onto
+        # the camera's local right axis). Line is at y=LINE_Y along +x.
+        # Sign chosen so the controller's drive_dir(-1) * k_lat * offset_norm
+        # term steers the rear-steer reverse-driving forklift toward the line
+        # in our MuJoCo actuator convention. Equivalent to flipping
+        # `offset_sign_front_low` on a bench setup.
+        lateral_world = (cam_y - LINE_Y) * math.cos(yaw)
+        offset_px = float(-lateral_world * PIXELS_PER_METER)
+
+        # Yaw of the line relative to camera up-direction. Sign chosen so the
+        # controller's k_yaw term provides negative feedback for our actuator
+        # convention (analogous to `yaw_sign_front_low` per-camera flip).
+        yaw_rad = float(-yaw)
+
+        ls = LineState()
+        ls.header.stamp = self.get_clock().now().to_msg()
+        ls.header.frame_id = 'front_low_camera'
+        # The sim "always sees" the line within ±10 m of origin along x.
+        ls.guide_detected = abs(cam_x) < 18.0
+        ls.guide_offset_px = offset_px
+        ls.guide_yaw_rad = yaw_rad
+        ls.guide_offset_m = float(lateral_world)
+        ls.stop_detected = False
+        ls.stop_distance_px = 0.0
+        ls.yellow_stop_detected = False
+        ls.yellow_stop_distance_px = 0.0
+        ls.image_width = IMAGE_WIDTH_PX
+        ls.image_height = IMAGE_HEIGHT_PX
+        self.pub_line.publish(ls)
 
 
 def _resolve_model_path() -> str:

@@ -1,0 +1,100 @@
+# Default parameters for drop_off.line_follower_controller.
+#
+# All speeds are normalised to [-1, 1] on the wire. The downstream
+# driver maps drive_norm=1.0 to 4000 motor RPM, so 0.05 is a very slow
+# crawl -- safe default for bench tests. Bump `low_drive_norm` and the
+# `max_drive_norm` ceiling cautiously after the first successful runs.
+/**:
+  ros__parameters:
+    line_state_topic: /drop_off/line_state
+    mode_topic: /drop_off/mode
+    odom_topic: /odom
+    output_topic: /automation/command_sources/line_follower
+
+    publish_rate_hz: 50.0
+    line_state_timeout_sec: 0.3
+    mode_timeout_sec: 2.0
+    line_lost_timeout_sec: 0.5
+
+    # Bench-tuned: 0.08 drive crawls reliably above motor stiction at
+    # mid-range steer angles (the original 0.05 stalled during
+    # x_correct). Steering ceiling 0.6 leaves room for aggressive yaw
+    # correction without hitting the cap. max_drive_norm stays at 0.1
+    # as a hard speed ceiling.
+    low_drive_norm: 0.08
+    max_steer_norm: 0.6
+    max_drive_norm: 0.1
+
+    # Lateral / yaw PD-ish gains for follow_line + x_correct. The yaw
+    # term acts as natural damping (yaw ~ d(offset)/d(travel)), so
+    # bumping k_yaw and easing k_lat reduces overshoot while still
+    # converging fast. Bench-tuned during test 3.
+    k_lat: 0.4
+    k_yaw: 3.5
+
+    max_travel_m: 2.0
+    # x_correct: hard cap on |offset_norm| (fraction of image width).
+    # If the lateral error ever exceeds this while x_correct is active,
+    # the offset sign is almost certainly wrong (line is wandering to
+    # the edge of frame). Drop to idle and log loudly.
+    x_correct_offset_abort_norm: 0.45
+
+    yaw_done_rad: 0.05
+    # +1 = drive forward while pivoting, -1 = reverse (default reverse
+    # so the whole approach is consistently a backwards manoeuvre).
+    yaw_align_drive_sign: -1
+    # Steering magnitude for yaw_align. Default 1.0 = full lock so the
+    # truck pivots about the passive axle in place. Independent of
+    # max_steer_norm (which keeps follow_line / x_correct gentle).
+    yaw_align_steer_norm: 1.0
+    # Divergence guard: if |yaw| hasn't decreased by at least
+    # `yaw_align_divergence_min_progress_rad` after
+    # `yaw_align_divergence_check_sec` seconds, the steering sign is
+    # almost certainly wrong -- abort to idle and log loudly.
+    yaw_align_divergence_check_sec: 2.0
+    yaw_align_divergence_min_progress_rad: 0.02
+    # Hard timeout. If yaw_align hasn't converged within this many
+    # seconds, abort to idle.
+    yaw_align_max_duration_sec: 20.0
+
+    # +1 = forward, -1 = reverse. Default reverse: the user described
+    # approaching the conveyor backwards.
+    drive_direction_sign: -1
+
+    # back_out drives the OPPOSITE of drive_direction_sign along the
+    # same red guide and stops on a yellow perpendicular tape. The
+    # steering_sign flip negates the whole PD output so the offset and
+    # yaw feedback both push the truck in the right direction with the
+    # motion reversed. Bench-tuned: signs verified empirically and
+    # gains chosen so the offset term dominates the yaw term -- in
+    # back_out the two corrections physically OPPOSE each other (truck
+    # right of line wants CCW, positive yaw wants CW), so follow_line's
+    # 1:8.75 lat:yaw ratio would let yaw swamp offset and keep the
+    # truck off-line. With k_lat=0.4 / k_yaw=0.1 (4:1) the offset
+    # converges cleanly while yaw still provides light damping.
+    # Live-tune via:
+    #   ros2 param set /line_follower_controller back_out_steering_sign -1.0
+    #   ros2 param set /line_follower_controller back_out_offset_sign 1.0
+    #   ros2 param set /line_follower_controller back_out_yaw_sign 1.0
+    #   ros2 param set /line_follower_controller back_out_k_lat 0.4
+    #   ros2 param set /line_follower_controller back_out_k_yaw 0.1
+    # Set k_lat / k_yaw < 0 to fall back to follow_line's gains.
+    back_out_steering_sign: -1.0
+    back_out_offset_sign: 1.0
+    back_out_yaw_sign: 1.0
+    back_out_k_lat: 0.4
+    back_out_k_yaw: 0.1
+
+    # StopDecider band (fractions of image height from the bottom).
+    # Defaults to the WHOLE frame so any in-frame stop tape counts;
+    # the consecutive-frames debounce below provides robustness against
+    # spurious detections. Narrow this band later if false positives
+    # at one end of the frame become a problem (e.g. set high=0.7 to
+    # ignore a stop tape that's still at the very top of the image).
+    stop_band_low_frac: 0.0
+    stop_band_high_frac: 1.0
+    # Debounce: number of consecutive *unique* line_state frames (the
+    # decider dedupes by header stamp) needed before a stop fires. At
+    # ~20 fps, 5 frames ~= 250 ms. Trades responsiveness for
+    # robustness against single-frame false positives.
+    stop_min_consec_frames: 5

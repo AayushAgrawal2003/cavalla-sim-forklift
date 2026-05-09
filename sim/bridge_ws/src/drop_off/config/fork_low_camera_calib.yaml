@@ -1,0 +1,15 @@
+# Default intrinsics for OAK-D-PoE colour camera (CAM_A, IMX378) at
+# 640x480. HFOV ~= 81 deg => fx ~= (640/2)/tan(40.5 deg) ~= 374.
+# Replace with a real chessboard calibration once one is available.
+image_width: 640
+image_height: 480
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [374.0,    0.0,  320.0,
+            0.0, 374.0,  240.0,
+            0.0,    0.0,    1.0]
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]

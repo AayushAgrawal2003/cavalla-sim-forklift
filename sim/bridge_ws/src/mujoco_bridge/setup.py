@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'mujoco_driver = mujoco_bridge.mujoco_driver_node:main',
+            'automation_cmd_adapter = mujoco_bridge.automation_cmd_adapter:main',
         ],
     },
 )

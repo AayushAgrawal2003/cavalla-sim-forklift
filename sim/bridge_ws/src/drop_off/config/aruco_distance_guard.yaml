@@ -1,0 +1,41 @@
+# Default parameters for drop_off.aruco_distance_guard.
+#
+# Detects ArUco markers 4-7 in the forward camera and averages their
+# distance from the camera. Line follow ABORTS back to teleop whenever
+# the average drops below `distance_threshold_m` -- but only if it's
+# > 0. Default is -1.0 so existing flows are unaffected; populate it
+# with `cavalla automation aruco-calib`.
+#
+# Intrinsics: by default we subscribe to `/front_low/camera_info`
+# (luxonis_cam_pipeline publishes CAM_A intrinsics scaled to the rgb
+# publish size). Set `calib_file` to override with a YAML in standard
+# ROS camera_info format.
+/**:
+  ros__parameters:
+    image_topic: /fork_low/rgb/raw
+    camera_info_topic: /fork_low/camera_info
+
+    distance_topic: /aruco_distance_guard/distance
+    below_threshold_topic: /aruco_distance_guard/below_threshold
+    state_topic: /aruco_distance_guard/state
+    overlay_topic: /aruco_distance_guard/image_overlay
+    overlay_enabled: true
+
+    # fork_low is mounted upside-down on the truck (matches the
+    # convention used by line_detector and the fork-x marker_detector),
+    # so rotate the frame 180 deg right after decode. If you switch
+    # `image_topic` to a forward-facing camera flip this back to false.
+    rotate_180: true
+
+    aruco_dict: DICT_5X5_50
+    marker_ids: [4, 5, 6, 7]
+    marker_length_m: 0.05
+    corner_refine_method: APRILTAG
+
+    # Stand-in OAK-D-PoE colour intrinsics for 640x480 (HFOV ~81 deg);
+    # ships as a sibling YAML in the same install/share/drop_off/config
+    # directory so a fresh container build picks it up automatically.
+    # Replace with a real chessboard calibration when available.
+    calib_file: /ros_ws/install/drop_off/share/drop_off/config/fork_low_camera_calib.yaml
+    distance_threshold_m: 0.95
+    publish_rate_hz: 20.0

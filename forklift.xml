@@ -66,6 +66,12 @@
     <geom name="ground" type="plane" size="25 25 0.1" material="groundplane"
           contype="1" conaffinity="30"/>
 
+    <!-- Yellow guide line (visual only) — straight line at y=0 along x,
+         tracked by the simulated front_low camera in the bridge. -->
+    <geom name="guide_line" type="box" class="visual"
+          size="20.0 0.04 0.001" pos="0 0 0.002"
+          rgba="0.95 0.85 0.0 1"/>
+
     <!-- ================================================================ -->
     <!-- CHASSIS — origin between axles, 0.30m above ground               -->
     <!-- Front axle (2 drive) X=+0.528  |  Rear axle (1 steer) X=-0.528  -->
