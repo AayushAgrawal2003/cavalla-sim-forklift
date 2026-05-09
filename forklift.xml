@@ -1,0 +1,279 @@
+<mujoco model="forklift_agv_1MBV15R30">
+  <compiler angle="radian" autolimits="true"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast">
+    <flag warmstart="enable"/>
+  </option>
+
+  <default>
+    <joint damping="80"/>
+    <geom condim="4" friction="1.0 0.005 0.001" solimp="0.95 0.99 0.001 0.5 2" solref="0.01 1"/>
+    <default class="wheel">
+      <geom condim="4" friction="1.0 0.005 0.002" priority="1"
+            solimp="0.95 0.99 0.001 0.5 2" solref="0.01 1"/>
+    </default>
+    <default class="fork">
+      <geom friction="0.8 0.005 0.001" solimp="0.95 0.99 0.001 0.5 2" solref="0.01 1"/>
+    </default>
+    <default class="visual">
+      <geom contype="0" conaffinity="0"/>
+    </default>
+  </default>
+
+  <asset>
+    <texture type="2d" name="groundplane" builtin="checker"
+             rgb1="0.25 0.28 0.25" rgb2="0.18 0.20 0.18" width="512" height="512"/>
+    <material name="groundplane" texture="groundplane" texrepeat="8 8" texuniform="true"/>
+    <material name="chassis" rgba="1.0 0.72 0.0 1"/>
+    <material name="counterweight" rgba="0.85 0.60 0.0 1"/>
+    <material name="wheel_rubber" rgba="0.12 0.12 0.12 1"/>
+    <material name="wheel_rim" rgba="0.6 0.6 0.6 1"/>
+    <material name="fork_steel" rgba="0.55 0.55 0.55 1"/>
+    <material name="mast_steel" rgba="0.35 0.35 0.38 1"/>
+    <material name="guard" rgba="1.0 0.72 0.0 0.9"/>
+    <material name="hydraulic" rgba="0.3 0.3 0.32 1"/>
+    <material name="payload" rgba="0.6 0.45 0.3 1"/>
+  </asset>
+
+  <!--
+    3-WHEEL AGV COUNTERBALANCED FORKLIFT — 1MBV15R30V995V1
+    Dimensions extracted from STEP CAD file.
+
+    Standard 3-wheel layout:
+      2 front drive wheels   R=152.5mm W=120mm  track=918mm  (fork side)
+      1 rear center steer    R=153mm   W=110mm               (counterweight side)
+    Wheelbase: 1055mm
+
+    Collision groups (bitfield):
+      ground:   contype=1   conaffinity=30
+      chassis:  contype=8   conaffinity=17
+      wheels:   contype=2   conaffinity=17
+      forks:    contype=4   conaffinity=17
+      payload:  contype=16  conaffinity=14
+      visual:   contype=0   conaffinity=0
+  -->
+
+  <worldbody>
+    <light directional="true" pos="3 3 8" dir="-0.3 -0.3 -1"
+           diffuse="0.9 0.9 0.85" specular="0.3 0.3 0.3"/>
+    <light directional="true" pos="-3 -3 6" dir="0.3 0.3 -1"
+           diffuse="0.3 0.3 0.35"/>
+
+    <geom name="ground" type="plane" size="25 25 0.1" material="groundplane"
+          contype="1" conaffinity="30"/>
+
+    <!-- ================================================================ -->
+    <!-- CHASSIS — origin between axles, 0.30m above ground               -->
+    <!-- Front axle (2 drive) X=+0.528  |  Rear axle (1 steer) X=-0.528  -->
+    <!-- ================================================================ -->
+    <body name="chassis" pos="0 0 0.30">
+      <freejoint name="root"/>
+      <inertial pos="-0.10 0 0.06" mass="3200" diaginertia="500 900 1100"/>
+
+      <!-- Lower chassis frame -->
+      <geom name="chassis_lower" type="box"
+            size="0.72 0.40 0.10" pos="0 0 0"
+            material="chassis" mass="1100"
+            contype="8" conaffinity="17"/>
+
+      <!-- Upper chassis / operator area -->
+      <geom name="chassis_upper" type="box"
+            size="0.42 0.38 0.16" pos="-0.22 0 0.26"
+            material="chassis" mass="350"
+            contype="8" conaffinity="17"/>
+
+      <!-- Counterweight (rear) -->
+      <geom name="counterweight" type="box"
+            size="0.22 0.40 0.28" pos="-0.72 0 0.06"
+            material="counterweight" mass="1100"
+            contype="8" conaffinity="17"/>
+
+      <!-- Battery compartment -->
+      <geom name="battery_box" type="box"
+            size="0.28 0.36 0.18" pos="-0.28 0 0.44"
+            material="chassis" mass="400"
+            contype="8" conaffinity="17"/>
+
+      <!-- Operator platform -->
+      <geom name="operator_floor" type="box" class="visual"
+            size="0.28 0.34 0.01" pos="0.10 0 0.11"
+            material="chassis" mass="30"/>
+
+      <!-- Overhead guard -->
+      <geom name="guard_fl" type="box" class="visual"
+            size="0.022 0.022 0.46" pos="0.34 0.32 0.72" material="guard" mass="6"/>
+      <geom name="guard_fr" type="box" class="visual"
+            size="0.022 0.022 0.46" pos="0.34 -0.32 0.72" material="guard" mass="6"/>
+      <geom name="guard_rl" type="box" class="visual"
+            size="0.022 0.022 0.46" pos="-0.14 0.32 0.72" material="guard" mass="6"/>
+      <geom name="guard_rr" type="box" class="visual"
+            size="0.022 0.022 0.46" pos="-0.14 -0.32 0.72" material="guard" mass="6"/>
+      <geom name="guard_roof" type="box" class="visual"
+            size="0.27 0.35 0.01" pos="0.10 0 1.19" material="guard" mass="20"/>
+
+      <!-- Dash panel -->
+      <geom name="dash" type="box" class="visual"
+            size="0.04 0.30 0.10" pos="0.36 0 0.36" material="chassis" mass="15"/>
+
+      <!-- ============================================================ -->
+      <!-- FRONT DRIVE WHEELS (2x, fork side)                           -->
+      <!-- R=152.5mm, W=120mm, track=918mm                              -->
+      <!-- ============================================================ -->
+      <body name="wheel_fl" pos="0.528 0.459 -0.1475">
+        <joint name="drive_fl" type="hinge" axis="0 1 0" damping="8"/>
+        <geom name="tire_fl" type="cylinder" class="wheel"
+              size="0.1525 0.06" euler="1.5708 0 0"
+              material="wheel_rubber" mass="14"
+              contype="2" conaffinity="17"/>
+        <geom name="rim_fl" type="cylinder" class="visual"
+              size="0.09 0.065" euler="1.5708 0 0"
+              material="wheel_rim" mass="6"/>
+      </body>
+
+      <body name="wheel_fr" pos="0.528 -0.459 -0.1475">
+        <joint name="drive_fr" type="hinge" axis="0 1 0" damping="8"/>
+        <geom name="tire_fr" type="cylinder" class="wheel"
+              size="0.1525 0.06" euler="1.5708 0 0"
+              material="wheel_rubber" mass="14"
+              contype="2" conaffinity="17"/>
+        <geom name="rim_fr" type="cylinder" class="visual"
+              size="0.09 0.065" euler="1.5708 0 0"
+              material="wheel_rim" mass="6"/>
+      </body>
+
+      <!-- ============================================================ -->
+      <!-- REAR STEER WHEEL (1x, centered, counterweight side)          -->
+      <!-- R=153mm, W=110mm                                             -->
+      <!-- ============================================================ -->
+      <body name="rear_steer" pos="-0.528 0 -0.147">
+        <inertial pos="0 0 0" mass="2" diaginertia="0.01 0.01 0.01"/>
+        <joint name="steering" type="hinge" axis="0 0 1"
+               range="-1.22 1.22" damping="250" stiffness="40"/>
+
+        <body name="rear_wheel" pos="0 0 0">
+          <joint name="roll_rear" type="hinge" axis="0 1 0" damping="12"/>
+          <geom name="tire_rear" type="cylinder" class="wheel"
+                size="0.153 0.055" euler="1.5708 0 0"
+                material="wheel_rubber" mass="18"
+                contype="2" conaffinity="17"/>
+          <geom name="rim_rear" type="cylinder" class="visual"
+                size="0.095 0.058" euler="1.5708 0 0"
+                material="wheel_rim" mass="8"/>
+        </body>
+      </body>
+
+      <!-- ============================================================ -->
+      <!-- MAST ASSEMBLY (at front, tiltable)                           -->
+      <!-- ============================================================ -->
+      <body name="mast" pos="0.55 0 -0.02">
+        <joint name="tilt" type="hinge" axis="0 1 0"
+               range="-0.105 0.070" damping="600" stiffness="150"/>
+
+        <geom name="mast_left" type="box" class="visual"
+              size="0.028 0.028 0.75" pos="0 0.34 0.75"
+              material="mast_steel" mass="55"/>
+        <geom name="mast_right" type="box" class="visual"
+              size="0.028 0.028 0.75" pos="0 -0.34 0.75"
+              material="mast_steel" mass="55"/>
+        <geom name="mast_top_bar" type="box" class="visual"
+              size="0.02 0.34 0.02" pos="0 0 1.52"
+              material="mast_steel" mass="12"/>
+        <geom name="mast_bot_bar" type="box" class="visual"
+              size="0.02 0.26 0.02" pos="0 0 0.02"
+              material="mast_steel" mass="10"/>
+        <geom name="pulley_l" type="cylinder" class="visual"
+              size="0.04 0.015" pos="0 0.20 1.48"
+              material="mast_steel" mass="3"/>
+        <geom name="pulley_r" type="cylinder" class="visual"
+              size="0.04 0.015" pos="0 -0.20 1.48"
+              material="mast_steel" mass="3"/>
+        <geom name="hydraulic_cyl" type="cylinder" class="visual"
+              size="0.032 0.58" pos="0 0 0.62"
+              material="hydraulic" mass="25"/>
+
+        <!-- FORK CARRIAGE -->
+        <body name="carriage" pos="0.05 0 0">
+          <joint name="lift" type="slide" axis="0 0 1"
+                 range="0 1.2" damping="1200" stiffness="80"/>
+
+          <geom name="carriage_plate" type="box" class="visual"
+                size="0.012 0.32 0.18" pos="0 0 0.20"
+                material="mast_steel" mass="45"/>
+          <geom name="roller_tl" type="sphere" class="visual"
+                size="0.018" pos="0.014 0.30 0.36" material="wheel_rim" mass="1"/>
+          <geom name="roller_tr" type="sphere" class="visual"
+                size="0.018" pos="0.014 -0.30 0.36" material="wheel_rim" mass="1"/>
+          <geom name="roller_bl" type="sphere" class="visual"
+                size="0.018" pos="0.014 0.30 0.04" material="wheel_rim" mass="1"/>
+          <geom name="roller_br" type="sphere" class="visual"
+                size="0.018" pos="0.014 -0.30 0.04" material="wheel_rim" mass="1"/>
+
+          <!-- FORKS (L-shaped, 1150mm long, 100mm wide, 40mm thick) -->
+          <!-- LEFT FORK -->
+          <geom name="fork_l_heel" type="box" class="fork"
+                size="0.02 0.05 0.095" pos="0.03 0.15 -0.085"
+                material="fork_steel" mass="10"
+                contype="4" conaffinity="17"/>
+          <geom name="fork_l_tine" type="box" class="fork"
+                size="0.575 0.05 0.02" pos="0.605 0.15 -0.160"
+                material="fork_steel" mass="24"
+                contype="4" conaffinity="17"/>
+          <geom name="fork_l_tip" type="box" class="fork"
+                size="0.04 0.043 0.010" pos="1.16 0.15 -0.152"
+                material="fork_steel" mass="2"
+                contype="4" conaffinity="17"/>
+
+          <!-- RIGHT FORK -->
+          <geom name="fork_r_heel" type="box" class="fork"
+                size="0.02 0.05 0.095" pos="0.03 -0.15 -0.085"
+                material="fork_steel" mass="10"
+                contype="4" conaffinity="17"/>
+          <geom name="fork_r_tine" type="box" class="fork"
+                size="0.575 0.05 0.02" pos="0.605 -0.15 -0.160"
+                material="fork_steel" mass="24"
+                contype="4" conaffinity="17"/>
+          <geom name="fork_r_tip" type="box" class="fork"
+                size="0.04 0.043 0.010" pos="1.16 -0.15 -0.152"
+                material="fork_steel" mass="2"
+                contype="4" conaffinity="17"/>
+        </body>
+      </body>
+    </body>
+
+    <!-- TEST PAYLOAD -->
+    <body name="pallet" pos="3.5 0 0.08">
+      <freejoint name="pallet_free"/>
+      <geom name="pallet_base" type="box" size="0.60 0.40 0.07"
+            material="payload" mass="25" contype="16" conaffinity="14"/>
+      <geom name="cargo" type="box" size="0.50 0.35 0.30" pos="0 0 0.37"
+            rgba="0.45 0.35 0.25 1" mass="500" contype="16" conaffinity="14"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- Differential drive (2 front wheels) -->
+    <motor name="drive_left" joint="drive_fl" gear="1000" ctrlrange="-1 1" ctrllimited="true"/>
+    <motor name="drive_right" joint="drive_fr" gear="1000" ctrlrange="-1 1" ctrllimited="true"/>
+
+    <!-- Rear steering -->
+    <position name="steer" joint="steering" kp="6000" ctrlrange="-1.22 1.22" ctrllimited="true"/>
+
+    <!-- Mast tilt -->
+    <position name="mast_tilt" joint="tilt" kp="12000" ctrlrange="-0.105 0.070" ctrllimited="true"/>
+
+    <!-- Fork lift -->
+    <position name="fork_lift" joint="lift" kp="25000" ctrlrange="0 1.2" ctrllimited="true"/>
+  </actuator>
+
+  <sensor>
+    <jointpos name="s_steer_angle" joint="steering"/>
+    <jointpos name="s_lift_height" joint="lift"/>
+    <jointpos name="s_tilt_angle" joint="tilt"/>
+    <jointvel name="s_drive_fl" joint="drive_fl"/>
+    <jointvel name="s_drive_fr" joint="drive_fr"/>
+    <jointvel name="s_roll_rear" joint="roll_rear"/>
+    <framepos name="s_chassis_pos" objtype="body" objname="chassis"/>
+    <framequat name="s_chassis_quat" objtype="body" objname="chassis"/>
+    <framepos name="s_fork_tip" objtype="geom" objname="fork_l_tip"/>
+  </sensor>
+</mujoco>
