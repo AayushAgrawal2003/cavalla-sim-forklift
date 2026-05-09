@@ -13,12 +13,11 @@ Exercises all key functionalities:
   9. Lower forks
   10. Drive in reverse
 
-Actuator layout (5 actuators):
-  [0] drive_left   — motor on front-left wheel
-  [1] drive_right   — motor on front-right wheel
-  [2] steer         — position ctrl on rear steering
-  [3] mast_tilt     — position ctrl on mast tilt
-  [4] fork_lift     — position ctrl on fork lift
+Actuator layout (4 actuators):
+  [0] drive         — single throttle, drives both front wheels via tendon
+  [1] steer         — position ctrl on rear steering
+  [2] mast_tilt     — position ctrl on mast tilt
+  [3] fork_lift     — position ctrl on fork lift
 """
 
 import mujoco
@@ -33,11 +32,10 @@ model = mujoco.MjModel.from_xml_path(MODEL_PATH)
 data = mujoco.MjData(model)
 
 # Actuator indices
-ACT_DRV_L = 0
-ACT_DRV_R = 1
-ACT_STEER = 2
-ACT_TILT  = 3
-ACT_LIFT  = 4
+ACT_DRIVE = 0
+ACT_STEER = 1
+ACT_TILT  = 2
+ACT_LIFT  = 3
 
 log = {
     "time": [], "x": [], "y": [], "z": [], "heading_deg": [],
@@ -90,20 +88,20 @@ print("=" * 70)
 DRV = 0.50
 STR = 0.10
 
-#                                         drv_l  drv_r  steer   tilt    lift
+#                                          drive  steer   tilt    lift
 phases = [
-    ("1_SETTLE",         1.5, [ 0.0,   0.0,   0.0,    0.0,    0.0  ]),
-    ("2_DRIVE_FWD",      3.0, [ DRV,   DRV,   0.0,    0.0,    0.0  ]),
-    ("3_STEER_LEFT",     3.0, [ DRV,   DRV,   STR,    0.0,    0.0  ]),
-    ("4_DRIVE_TURNED",   2.0, [ DRV,   DRV,   0.0,    0.0,    0.0  ]),
-    ("5_STEER_RIGHT",    4.0, [ DRV,   DRV,  -STR,    0.0,    0.0  ]),
-    ("6_STRAIGHTEN",     2.0, [ DRV,   DRV,   0.0,    0.0,    0.0  ]),
-    ("7_STOP_LIFT",      4.0, [ 0.0,   0.0,   0.0,    0.0,    0.8  ]),
-    ("8_TILT_FWD",       2.0, [ 0.0,   0.0,   0.0,    0.07,   0.8  ]),
-    ("9_TILT_BACK",      2.0, [ 0.0,   0.0,   0.0,   -0.10,   0.8  ]),
-    ("10_TILT_LEVEL",    2.0, [ 0.0,   0.0,   0.0,    0.0,    0.8  ]),
-    ("11_LOWER_FORKS",   4.0, [ 0.0,   0.0,   0.0,    0.0,    0.0  ]),
-    ("12_REVERSE",       3.0, [-DRV,  -DRV,   0.0,    0.0,    0.0  ]),
+    ("1_SETTLE",         1.5, [  0.0,   0.0,    0.0,    0.0  ]),
+    ("2_DRIVE_FWD",      3.0, [  DRV,   0.0,    0.0,    0.0  ]),
+    ("3_STEER_LEFT",     3.0, [  DRV,   STR,    0.0,    0.0  ]),
+    ("4_DRIVE_TURNED",   2.0, [  DRV,   0.0,    0.0,    0.0  ]),
+    ("5_STEER_RIGHT",    4.0, [  DRV,  -STR,    0.0,    0.0  ]),
+    ("6_STRAIGHTEN",     2.0, [  DRV,   0.0,    0.0,    0.0  ]),
+    ("7_STOP_LIFT",      4.0, [  0.0,   0.0,    0.0,    0.8  ]),
+    ("8_TILT_FWD",       2.0, [  0.0,   0.0,    0.07,   0.8  ]),
+    ("9_TILT_BACK",      2.0, [  0.0,   0.0,   -0.10,   0.8  ]),
+    ("10_TILT_LEVEL",    2.0, [  0.0,   0.0,    0.0,    0.8  ]),
+    ("11_LOWER_FORKS",   4.0, [  0.0,   0.0,    0.0,    0.0  ]),
+    ("12_REVERSE",       3.0, [ -DRV,   0.0,    0.0,    0.0  ]),
 ]
 
 for name, dur, ctrl in phases:

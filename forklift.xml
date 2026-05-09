@@ -5,6 +5,10 @@
     <flag warmstart="enable"/>
   </option>
 
+  <visual>
+    <global offwidth="1920" offheight="1080"/>
+  </visual>
+
   <default>
     <joint damping="80"/>
     <geom condim="4" friction="1.0 0.005 0.001" solimp="0.95 0.99 0.001 0.5 2" solref="0.01 1"/>
@@ -167,7 +171,7 @@
       <!-- ============================================================ -->
       <body name="mast" pos="0.55 0 -0.02">
         <joint name="tilt" type="hinge" axis="0 1 0"
-               range="-0.105 0.070" damping="600" stiffness="150"/>
+               range="-0.105 0.070" damping="2500" stiffness="2000" armature="50"/>
 
         <geom name="mast_left" type="box" class="visual"
               size="0.028 0.028 0.75" pos="0 0.34 0.75"
@@ -194,7 +198,7 @@
         <!-- FORK CARRIAGE -->
         <body name="carriage" pos="0.05 0 0">
           <joint name="lift" type="slide" axis="0 0 1"
-                 range="0 1.2" damping="1200" stiffness="80"/>
+                 range="0 1.2" damping="2500" stiffness="80"/>
 
           <geom name="carriage_plate" type="box" class="visual"
                 size="0.012 0.32 0.18" pos="0 0 0.20"
@@ -240,20 +244,20 @@
       </body>
     </body>
 
-    <!-- TEST PAYLOAD -->
-    <body name="pallet" pos="3.5 0 0.08">
-      <freejoint name="pallet_free"/>
-      <geom name="pallet_base" type="box" size="0.60 0.40 0.07"
-            material="payload" mass="25" contype="16" conaffinity="14"/>
-      <geom name="cargo" type="box" size="0.50 0.35 0.30" pos="0 0 0.37"
-            rgba="0.45 0.35 0.25 1" mass="500" contype="16" conaffinity="14"/>
-    </body>
   </worldbody>
 
+  <tendon>
+    <!-- Mechanically couple the two front wheels so a single 'drive' motor
+         applies equal torque to both. Real forklift has one drivetrain. -->
+    <fixed name="drive_axle">
+      <joint joint="drive_fl" coef="1.0"/>
+      <joint joint="drive_fr" coef="1.0"/>
+    </fixed>
+  </tendon>
+
   <actuator>
-    <!-- Differential drive (2 front wheels) -->
-    <motor name="drive_left" joint="drive_fl" gear="1000" ctrlrange="-1 1" ctrllimited="true"/>
-    <motor name="drive_right" joint="drive_fr" gear="1000" ctrlrange="-1 1" ctrllimited="true"/>
+    <!-- Unified drive (single throttle, both front wheels) -->
+    <motor name="drive" tendon="drive_axle" gear="1000" ctrlrange="-1 1" ctrllimited="true"/>
 
     <!-- Rear steering -->
     <position name="steer" joint="steering" kp="6000" ctrlrange="-1.22 1.22" ctrllimited="true"/>
@@ -262,7 +266,7 @@
     <position name="mast_tilt" joint="tilt" kp="12000" ctrlrange="-0.105 0.070" ctrllimited="true"/>
 
     <!-- Fork lift -->
-    <position name="fork_lift" joint="lift" kp="25000" ctrlrange="0 1.2" ctrllimited="true"/>
+    <position name="fork_lift" joint="lift" kp="8000" kv="1500" ctrlrange="0 1.2" ctrllimited="true"/>
   </actuator>
 
   <sensor>
