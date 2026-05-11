@@ -5,6 +5,16 @@ to drop into the Cavalier ROS 2 control stack as a sim-hardware target.
 
 ![demo](forklift_demo.mp4)
 
+## Operating modes
+
+Three increasingly-integrated ways to drive the sim:
+
+| Mode | What runs | When to use |
+|------|-----------|-------------|
+| **Scripted demo** | `run_sim.py` writes directly to `data.ctrl` | Sanity-check the model; reproduces a 12-phase motion script and asserts 16 invariants (CoM, wheel contact, fork height, etc.) |
+| **Manual ROS bridge** | `mujoco_driver_node` + `ros2 topic pub` (or `sim/test_bridge.py`) | Smoke-test individual commands; develop new automation modules against the sim |
+| **Full Cavalier stack** | bridge + orchestrator + automation mux + `safety_node` + a controller (e.g. `line_follower`) | Closed-loop integration: the sim is the *only* "hardware" the real Cavalier code sees |
+
 ## What's here
 
 | Path | What it is |
@@ -16,6 +26,18 @@ to drop into the Cavalier ROS 2 control stack as a sim-hardware target.
 | `sim/test_bridge.py` | End-to-end pub/sub test (15 checks, exercises every command axis) |
 | `sim/run_line_follow.sh` | Closed-loop line-following: bridge + safety + mux + adapter + Cavalier line_follower (unchanged) + activator |
 | `sim/record_line_follow.sh` | Same, but also encodes an mp4 (`forklift_line_follow.mp4`) |
+| `cavalier_system/` | Submodule → [Cavalla-io/cavalier_system](https://github.com/Cavalla-io/cavalier_system) (`dev` branch). Pinned upstream Cavalier monorepo; the bridge talks to its `forklift_msgs` / `drop_off_msgs` interfaces |
+
+## Cloning
+
+The repo pulls in Cavalier as a submodule (which itself has nested submodules
+under `modules/`). Clone recursively:
+
+```bash
+git clone --recurse-submodules https://github.com/AayushAgrawal2003/cavalla-sim-forklift.git
+# or, if you already cloned without submodules:
+git submodule update --init --recursive
+```
 
 ## Quick start
 
@@ -71,6 +93,75 @@ python3 sim/test_bridge.py
 ros2 topic pub --rate 20 /safety/command forklift_msgs/msg/ForkliftDirectCommand \
   "{drive_speed: 0.5, brake_interlock_released: true}"
 ```
+
+## Control architecture
+
+`mujoco_driver_node` is a **drop-in replacement** for
+`forklift_driver/driver_node` — the ROS node that speaks CAN to the Curtis
+MBV15 controller on real hardware. It subscribes to the same
+`/safety/command` topic and publishes the same feedback topics, so every
+layer above the driver runs unchanged.
+
+```
+       ┌─────────────────────────────┐
+       │ orchestrator / mission state│
+       └──────────────┬──────────────┘
+                      │ AutomationGoal
+       ┌──────────────▼──────────────────────────────┐
+       │ automation modules                          │
+       │   line_follower · drop_off · pallet_approach│
+       └──────────────┬──────────────────────────────┘
+                      │ AutomationCommand on
+                      │   /automation/command_sources/<name>
+       ┌──────────────▼──────────────┐
+       │ automation_command_mux      │   merges sources by priority
+       └──────────────┬──────────────┘
+                      │ /automation/command
+       ┌──────────────▼──────────────┐
+       │ safety_node                 │   brake interlock,
+       │                             │   teleop priority, e-stop
+       └──────────────┬──────────────┘
+                      │ /safety/command  (ForkliftDirectCommand)
+       ┌──────────────▼──────────────┐
+       │ mujoco_driver_node          │   ← bridge (this repo)
+       │   ──────────────────────    │   replaces forklift_driver/driver_node
+       │   data.ctrl ↔ MuJoCo step   │
+       └──────────────┬──────────────┘
+                      │ ctrl[drive, steer, mast_tilt, fork_lift]
+       ┌──────────────▼──────────────┐
+       │ MuJoCo physics              │
+       └──────────────┬──────────────┘
+                      │ chassis pose, joint states
+       ┌──────────────▼──────────────────────────────────────────┐
+       │ mujoco_driver_node publishes:                           │
+       │   /odom                  /forklift/drive_feedback       │
+       │   /joint_states          /forklift/steering_angle       │
+       │   /drop_off/line_state   /forklift/fork_height          │
+       └─────────────────────────────────────────────────────────┘
+```
+
+**Command axes** (`ForkliftDirectCommand` → MuJoCo actuators):
+
+| Field | Range | Sim mapping |
+|-------|-------|-------------|
+| `drive_speed` | -1..1 | Both front-wheel motors equally (unified throttle) |
+| `steering_angle` | -1..1 | Rear steer position, scaled to ±1.22 rad |
+| `lift_speed` | -1..1 | Integrated → fork-lift position (max 0.40 m/s) |
+| `tilt_speed` | -1..1 | Integrated → mast-tilt position (max 0.50 rad/s) |
+| `estop_active` | bool | Drive forced to 0; brake reported engaged |
+| `brake_interlock_released` | bool | When `false`, drive command is gated to 0 |
+
+**Perception shortcut.** In sim, `/drop_off/line_state` is computed from
+ground-truth chassis pose (knowing where the yellow floor line is and where
+the front-low camera sits on the chassis) instead of running OpenCV on a
+rendered frame. The controller doesn't know the difference — same message,
+same units. This keeps the loop fast and the test deterministic; everything
+*above* the perception layer (PD controller, automation mux, safety, driver)
+is unmodified Cavalier code.
+
+The standalone scripted mode in `run_sim.py` bypasses all of the above and
+writes directly to `data.ctrl` on a 100 Hz loop — useful for model validation
+without the ROS stack running.
 
 ## Closed-loop line-following demo
 

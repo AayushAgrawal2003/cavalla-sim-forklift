@@ -3,9 +3,6 @@ __pycache__/
 *.pyc
 *.stp
 
-# Cavalier source dropped in for integration work — separate repo, do not nest.
-cavalier_system/
-
 # colcon build artifacts
 sim/bridge_ws/build/
 sim/bridge_ws/install/

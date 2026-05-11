@@ -1,0 +1,4 @@
+[submodule "cavalier_system"]
+	path = cavalier_system
+	url = https://github.com/Cavalla-io/cavalier_system.git
+	branch = dev
