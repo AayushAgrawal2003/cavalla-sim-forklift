@@ -136,3 +136,15 @@ See [`sim/README.md`](sim/README.md) for full integration notes.
 Drive both front wheels are mechanically coupled via a fixed tendon, so the
 viewer exposes a single `drive` slider — same as the real forklift's unified
 throttle. The other actuators are `steer`, `mast_tilt`, `fork_lift`.
+
+## CAD source
+
+The original STEP file from ZW3D (AP214, ~48 MB) is hosted on Google Drive
+since it exceeds reasonable size for git. Download with:
+
+```bash
+curl -L "https://drive.google.com/uc?export=download&id=1S6o4qJPj40MmrCi4RoucNmgwd1kFU2cF" \
+  -o forklift.stp
+```
+
+`*.stp` is gitignored so the file won't be tracked if dropped in the repo root.
